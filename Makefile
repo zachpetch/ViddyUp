@@ -34,8 +34,11 @@ all: $(BIN)
 $(BIN): $(OBJECTS)
 	$(CC) $^ $(LDLIBS) -o $@
 
-$(OBJECTS): $(SOURCES)
+$(OBJECTS): $(SOURCES) obj
 	$(CC) $(CFLAGS) -c $^ -o $@
+
+obj:
+	mkdir -p obj
 
 clean:
 	$(RM) $(BIN) $(OBJECTS)
