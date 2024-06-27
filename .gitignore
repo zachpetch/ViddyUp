@@ -1,2 +1,4 @@
 obj/*.o
 test_video.mov
+ViddyUp
+.DS_Store
