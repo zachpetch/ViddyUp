@@ -32,26 +32,37 @@ int set_video_context(char *path_to_video, AVFormatContext **f_ctx, int *index) 
         return -1;
     }
 
-    // TODO: DELETE THIS
-    fprintf(stdout, "Format Context Set\n");
     return 0;
 }
 
 int set_codec_context(AVFormatContext **f_ctx, AVCodecContext **c_ctx, const int *index) {
-    *c_ctx = avcodec_alloc_context3(NULL);
+    const AVCodec *codec = avcodec_find_decoder((*f_ctx)->streams[*index]->codecpar->codec_id);
+    if (!codec) {
+        fprintf(stderr, "Unable to find codec.\n");
+        return -1;
+    }
+
+    *c_ctx = avcodec_alloc_context3(codec);
     if (!*c_ctx) {
         fprintf(stderr, "Unable to allocate codec context.\n");
         return -1;
     }
 
-    avcodec_parameters_to_context(*c_ctx, (*f_ctx)->streams[*index]->codecpar);
+    if (avcodec_parameters_to_context(*c_ctx, (*f_ctx)->streams[*index]->codecpar) > 0) {
+        fprintf(stderr, "Unable to copy codec parameters to context.\n");
+        return -1;
+    }
 
-    // TODO: DELETE THIS
-    fprintf(stdout, "Codec Context Set\n");
+    if (avcodec_open2(*c_ctx, codec, NULL) > 0) {
+        fprintf(stderr, "Unable to open codec.\n");
+        return -1;
+    }
+
     return 0;
 }
 
-// TODO: I think we can replace using a codec at all with simply using `codec_context->codec`.
+// TODO: I think we can replace this, either by simply using `codec_context->codec`,
+// or by initializing the codec in `main()` and passing it along to set_codec_context().
 int get_codec(AVCodecContext **codec_context, const AVCodec **codec) {
     *codec = avcodec_find_decoder((*codec_context)->codec_id);
     if (!*codec) {
@@ -64,12 +75,10 @@ int get_codec(AVCodecContext **codec_context, const AVCodec **codec) {
         return -1;
     }
 
-    // TODO: DELETE THIS
-    fprintf(stdout, "Codec retrieved\n");
     return 0;
 }
 
-int decode_frames(FrameArray **frame_array, AVFormatContext **f_ctx, AVCodecContext **c_ctx, AVPacket packet, const int index) {
+int decode_frames(FrameArray **frame_array, AVFormatContext **f_ctx, AVCodecContext **c_ctx, AVPacket *packet, const int index) {
     AVFrame *frame = NULL;
     frame = av_frame_alloc();
     if (!frame) {
@@ -85,12 +94,12 @@ int decode_frames(FrameArray **frame_array, AVFormatContext **f_ctx, AVCodecCont
     // TODO: DELETE THIS
     fprintf(stdout, "FrameArray configured\n");
 
-    while (av_read_frame(*f_ctx, &packet) >= 0) {
+    while (av_read_frame(*f_ctx, packet) >= 0) {
         // TODO: DELETE THIS
         fprintf(stdout, "av_read_frame succeeded\n");
 
-        if (packet.stream_index == index) {
-            int check = avcodec_send_packet(*c_ctx, &packet);
+        if (packet->stream_index == index) {
+            int check = avcodec_send_packet(*c_ctx, packet);
             if (check < 0) {
                 fprintf(stderr, "Unable to send packet for decoding.\n");
                 break; // TODO: Should this return -1 instead? Contemplate and try some day.
@@ -123,7 +132,7 @@ int decode_frames(FrameArray **frame_array, AVFormatContext **f_ctx, AVCodecCont
                 fprintf(stdout, "Frame copied to FrameArray\n");
             }
         }
-        av_packet_unref(&packet);
+        av_packet_unref(packet);
     }
 
     // TODO: DELETE THIS
@@ -167,7 +176,7 @@ int main(int argc, char *argv[]) {
     AVFormatContext *format_context = NULL;
     AVCodecContext *codec_context = NULL;
     const AVCodec *codec = NULL;
-    AVPacket packet;
+    AVPacket *packet = NULL;
     FrameArray *frame_array;
 
     set_video_context(file_path, &format_context, &video_stream_index);
@@ -175,20 +184,24 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "Unable to set format context.\n");
         return 1;
     }
+    fprintf(stdout, "Set Format Context: %s\n", format_context->iformat->long_name);
 
     set_codec_context(&format_context, &codec_context, &video_stream_index);
     if (codec_context == NULL) {
         fprintf(stderr, "Unable to set codec context.\n");
         return 1;
     }
+    fprintf(stdout, "Codec Type: %s\n", codec_context->codec->long_name);
 
     get_codec(&codec_context, &codec);
     if (codec == NULL) {
         fprintf(stderr, "Unable to get codec.\n");
         return 1;
     }
+    fprintf(stdout, "Codec: %s\n", codec->long_name);
 
     decode_frames(&frame_array, &format_context, &codec_context, packet, video_stream_index);
+    fprintf(stdout, "Decoded %d frames\n", frame_array->count);
 
     // Reverse the array
     reverse_frames(&frame_array);
