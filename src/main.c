@@ -78,7 +78,7 @@ int get_codec(AVCodecContext **codec_context, const AVCodec **codec) {
     return 0;
 }
 
-int decode_frames(FrameArray **frame_array, AVFormatContext **f_ctx, AVCodecContext **c_ctx, AVPacket *packet, const int index) {
+int decode_frames(FrameArray **frame_array, AVFormatContext **f_ctx, AVCodecContext **c_ctx, AVPacket **packet, const int index) {
     AVFrame *frame = NULL;
     frame = av_frame_alloc();
     if (!frame) {
@@ -91,27 +91,15 @@ int decode_frames(FrameArray **frame_array, AVFormatContext **f_ctx, AVCodecCont
     (*frame_array)->count = 0;
     (*frame_array)->frames = malloc(sizeof(AVFrame*) * 1800); // TODO: Find a way to get video frame count. Or do different allocation. 1800 is one minute of 30fps video.
 
-    // TODO: DELETE THIS
-    fprintf(stdout, "FrameArray configured\n");
-
-    while (av_read_frame(*f_ctx, packet) >= 0) {
-        // TODO: DELETE THIS
-        fprintf(stdout, "av_read_frame succeeded\n");
-
-        if (packet->stream_index == index) {
-            int check = avcodec_send_packet(*c_ctx, packet);
+    while (av_read_frame(*f_ctx, *packet) >= 0) {
+        if ((*packet)->stream_index == index) {
+            int check = avcodec_send_packet(*c_ctx, *packet);
             if (check < 0) {
                 fprintf(stderr, "Unable to send packet for decoding.\n");
                 break; // TODO: Should this return -1 instead? Contemplate and try some day.
             }
 
-            // TODO: DELETE THIS
-            fprintf(stdout, "av_read_frame(f_ctx, packet) is indeed > 0\n");
-
             while (check >= 0) {
-                // TODO: DELETE THIS
-                fprintf(stdout, "They told me this would always be true\n");
-
                 check = avcodec_receive_frame(*c_ctx, frame);
                 if (check == AVERROR(EAGAIN) || check == AVERROR_EOF) {
                     break;
@@ -122,21 +110,13 @@ int decode_frames(FrameArray **frame_array, AVFormatContext **f_ctx, AVCodecCont
                     return -1;
                 }
 
-                // TODO: DELETE THIS
-                fprintf(stdout, "Frame decoded by avcodec\n");
-
                 AVFrame *frame_copy = av_frame_clone(frame);
                 (*frame_array)->frames[(*frame_array)->count++] = frame_copy;
-
-                // TODO: DELETE THIS
-                fprintf(stdout, "Frame copied to FrameArray\n");
             }
         }
-        av_packet_unref(packet);
+        av_packet_unref(*packet);
     }
 
-    // TODO: DELETE THIS
-    fprintf(stdout, "Frames decoded\n");
     return 0;
 }
 
@@ -147,18 +127,14 @@ int reverse_frames(FrameArray **frame_array) {
         (*frame_array)->frames[(*frame_array)->count - i - 1] = temp;
     }
 
-    // TODO: DELETE THIS
-    fprintf(stdout, "Frames reversed\n");
     return 0;
 }
 
 int encode_frames_to_video(FrameArray **frame_array) {
     if ((*frame_array)->count > 0) {
-        fprintf(stdout, "test\n");
+        fprintf(stdout, "check\n");
     }
 
-    // TODO: DELETE THIS
-    fprintf(stdout, "Frames encoded\n");
     return 0;
 }
 
@@ -175,36 +151,29 @@ int main(int argc, char *argv[]) {
     int video_stream_index;
     AVFormatContext *format_context = NULL;
     AVCodecContext *codec_context = NULL;
-    const AVCodec *codec = NULL;
-    AVPacket *packet = NULL;
+    AVPacket *packet = av_packet_alloc();
     FrameArray *frame_array;
 
     set_video_context(file_path, &format_context, &video_stream_index);
     if (format_context == NULL) {
         fprintf(stderr, "Unable to set format context.\n");
-        return 1;
+        goto end;
     }
-    fprintf(stdout, "Set Format Context: %s\n", format_context->iformat->long_name);
+    fprintf(stdout, "Format: %s\n", format_context->iformat->long_name);
 
     set_codec_context(&format_context, &codec_context, &video_stream_index);
     if (codec_context == NULL) {
         fprintf(stderr, "Unable to set codec context.\n");
-        return 1;
+        goto end;
     }
-    fprintf(stdout, "Codec Type: %s\n", codec_context->codec->long_name);
+    fprintf(stdout, "Codec: %s\n", codec_context->codec->long_name);
 
-    get_codec(&codec_context, &codec);
-    if (codec == NULL) {
-        fprintf(stderr, "Unable to get codec.\n");
-        return 1;
-    }
-    fprintf(stdout, "Codec: %s\n", codec->long_name);
-
-    decode_frames(&frame_array, &format_context, &codec_context, packet, video_stream_index);
+    decode_frames(&frame_array, &format_context, &codec_context, &packet, video_stream_index);
     fprintf(stdout, "Decoded %d frames\n", frame_array->count);
 
     // Reverse the array
     reverse_frames(&frame_array);
+    fprintf(stdout, "%d frames reversed\n", frame_array->count);
 
     // Encode it into a video
     encode_frames_to_video(&frame_array);
@@ -212,13 +181,14 @@ int main(int argc, char *argv[]) {
     // Save the reversed video file
     save_video_to_file();
 
+end:
     for (int i = 0; i < frame_array->count; i++) {
         av_frame_free(&frame_array->frames[i]);
     }
     free(frame_array->frames);
     avcodec_free_context(&codec_context);
     avformat_close_input(&format_context);
-    // TODO: Check for memory leaks
+    av_packet_free(&packet);
 
     return 0;
 }
